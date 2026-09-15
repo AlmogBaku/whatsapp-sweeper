@@ -91,6 +91,7 @@ def load_db_index():
         index[rel] = {
             "sender": sender or "Unknown",
             "chat": row["chat_name"] or sender or "Unknown",
+            "is_group": row["session_type"] != 0,
             "duration": row["duration"],
             "date": date,
         }
@@ -128,6 +129,7 @@ def scan_media():
                 "duration": meta["duration"] if meta and is_video else None,
                 "sender": meta["sender"] if meta else "Unknown",
                 "chat": meta["chat"] if meta else "Unknown",
+                "is_group": meta["is_group"] if meta else False,
                 "has_thumb": ext_lower in IMAGE_EXTS or is_video or has_sidecar_thumb,
             }
             next_id += 1
@@ -188,7 +190,18 @@ def compute_senders():
 
 
 def compute_chats():
-    return compute_agg("chat")
+    # Only real groups/channels, not 1:1 chats (whose "chat" name is just the
+    # other person's name and already covered by the sender filter). Unknown
+    # files (no DB match, so group-vs-1:1 is unknowable) still show up here
+    # too, same as they do in the sender list.
+    agg = {}
+    for r in RECORDS.values():
+        if not (r["is_group"] or r["chat"] == "Unknown"):
+            continue
+        s = agg.setdefault(r["chat"], {"name": r["chat"], "count": 0, "total_size": 0})
+        s["count"] += 1
+        s["total_size"] += r["size"]
+    return sorted(agg.values(), key=lambda s: s["total_size"], reverse=True)
 
 
 def filter_ids(include, exclude, include_chat, exclude_chat):
