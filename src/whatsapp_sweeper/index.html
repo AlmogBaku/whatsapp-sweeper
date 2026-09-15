@@ -1,0 +1,622 @@
+<title>WhatsApp Sweeper</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%B9%3C/text%3E%3C/svg%3E">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #121212;
+    color: #e8e8e8;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ---- sidebar ---- */
+  #sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    height: 100%;
+    min-height: 0;
+    background: #1a1a1a;
+    border-right: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #brand {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px; border-bottom: 1px solid #2a2a2a; flex-shrink: 0;
+  }
+  #brand .logo {
+    font-size: 26px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  #brand .name { font-size: 15px; font-weight: 700; color: #eee; }
+  #sidebar h2 { font-size: 14px; margin: 14px 14px 6px; color: #999; text-transform: uppercase; letter-spacing: .05em; }
+  #sidebar .hint { font-size: 11px; color: #777; margin: 0 14px 8px; line-height: 1.4; }
+  .filter-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .filter-section + .filter-section { border-top: 1px solid #2a2a2a; }
+  .filter-search {
+    width: calc(100% - 28px);
+    margin: 4px 14px 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid #333;
+    background: #111; color: #eee; font-size: 12px; outline: none;
+  }
+  .filter-search:focus { border-color: #4a8fe0; }
+  .filter-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 12px; }
+  .sender-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .sender-row:hover { background: #232323; }
+  .sender-row .chip {
+    width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0;
+    border: 1px solid #444; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: bold;
+  }
+  .sender-row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sender-row .size { color: #888; font-size: 11px; }
+  .sender-row.include .chip { background: #1e5f2e; border-color: #2e8b40; color: #7ee08b; }
+  .sender-row.exclude .chip { background: #5f1e1e; border-color: #8b2e2e; color: #e07e7e; }
+  .sender-row.include { background: #14261a; }
+  .sender-row.exclude { background: #261414; }
+
+  /* ---- main ---- */
+  #main { flex: 1; height: 100%; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+  #toolbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px; background: #1a1a1a; border-bottom: 1px solid #2a2a2a;
+    flex-shrink: 0;
+  }
+  #toolbar .stat { font-size: 13px; color: #aaa; }
+  #toolbar .spacer { flex: 1; }
+  #deleteBtn {
+    background: #7a1f1f; color: #fff; border: none; padding: 8px 16px;
+    border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  #deleteBtn:disabled { background: #3a3a3a; color: #777; cursor: default; }
+  #deleteBtn:not(:disabled):hover { background: #9a2a2a; }
+  #selectAllBtn {
+    background: #2a2a2a; color: #ddd; border: 1px solid #3a3a3a; padding: 8px 16px;
+    border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  #selectAllBtn:hover { background: #333; }
+
+  #grid {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 16px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 12px; align-content: start;
+  }
+  .card {
+    position: relative; cursor: pointer; border: 2px solid transparent; border-radius: 8px;
+    aspect-ratio: 1 / 1;
+  }
+  /* overflow:hidden must live on this inner wrapper, not on .card itself:
+     overflow!=visible on a grid item zeroes its "automatic minimum size",
+     which makes the grid miscompute the row's auto track height. */
+  .card .frame {
+    position: absolute; inset: 0; overflow: hidden; border-radius: 8px; background: #1e1e1e;
+  }
+  .card.selected { border-color: #4a8fe0; }
+  .card img, .card .placeholder {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    -webkit-user-drag: none; user-select: none;
+  }
+  .card .placeholder {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #888; background: #262626; text-transform: uppercase;
+  }
+  .card input[type=checkbox] {
+    position: absolute; top: 6px; left: 6px; width: 18px; height: 18px; z-index: 2;
+    cursor: pointer;
+  }
+  .card .overlay {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,.85));
+    padding: 18px 6px 5px; font-size: 10.5px; line-height: 1.35; color: #eee;
+    pointer-events: none;
+  }
+  .card .overlay .sender { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .overlay .chat { color: #8fa8c9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .overlay .meta { color: #bbb; display: flex; justify-content: space-between; gap: 4px; }
+  .card .duration {
+    position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.7);
+    padding: 2px 5px; border-radius: 4px; font-size: 10px;
+  }
+  #sentinel { height: 1px; grid-column: 1 / -1; }
+  #empty { color: #777; padding: 40px; text-align: center; grid-column: 1 / -1; }
+  #marquee {
+    position: fixed; border: 1px solid #4a8fe0; background: rgba(74,143,224,.15);
+    pointer-events: none; display: none; z-index: 50;
+  }
+</style>
+
+<div id="sidebar">
+  <div id="brand">
+    <span class="logo">🧹</span>
+    <span class="name">WhatsApp Sweeper</span>
+  </div>
+  <div class="filter-section">
+    <h2>Filter by sender</h2>
+    <div class="hint">Click a name to cycle: include only → exclude → off. Both can be active together.</div>
+    <input type="text" class="filter-search" id="senderSearch" placeholder="Search senders…">
+    <div class="filter-list" id="senderList"></div>
+  </div>
+  <div class="filter-section">
+    <h2>Filter by group / chat</h2>
+    <input type="text" class="filter-search" id="chatSearch" placeholder="Search groups…">
+    <div class="filter-list" id="chatList"></div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="toolbar">
+    <span class="stat" id="totalStat">Loading…</span>
+    <span class="spacer"></span>
+    <span class="stat" id="selStat"></span>
+    <button id="selectAllBtn">Select all</button>
+    <button id="deleteBtn" disabled>Delete selected</button>
+  </div>
+  <div id="grid"></div>
+</div>
+
+<script>
+const state = {
+  include: new Set(),
+  exclude: new Set(),
+  includeChat: new Set(),
+  excludeChat: new Set(),
+  selected: new Set(),   // ids
+  selectedSizeOverride: null, // set by "select all" (exact server total); cleared on any manual toggle
+  itemsById: new Map(),  // id -> item, for size lookups
+  lastClickedId: null,   // shift-click range anchor
+  filteredTotal: 0,      // total_count for the current filter (from last /api/items)
+  nextOffset: 0,
+  loading: false,
+  done: false,
+};
+
+function humanSize(bytes) {
+  if (bytes == null) return '';
+  const units = ['B','KB','MB','GB','TB'];
+  let i = 0, v = bytes;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function humanDuration(sec) {
+  if (sec == null) return null;
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function humanDate(epoch) {
+  if (!epoch) return '';
+  const d = new Date(epoch * 1000);
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+// Generic filter-section wiring: shared by "sender" and "chat" (group) filters.
+const filterSections = {
+  sender: { endpoint: '/api/senders', listId: 'senderList', searchId: 'senderSearch', include: state.include, exclude: state.exclude },
+  chat: { endpoint: '/api/chats', listId: 'chatList', searchId: 'chatSearch', include: state.includeChat, exclude: state.excludeChat },
+};
+
+async function loadFilterSection(key) {
+  const cfg = filterSections[key];
+  const res = await fetch(cfg.endpoint);
+  const rows = await res.json();
+  const list = document.getElementById(cfg.listId);
+  list.innerHTML = '';
+  for (const s of rows) {
+    const row = document.createElement('div');
+    row.className = 'sender-row';
+    row.dataset.name = s.name.toLowerCase();
+    row.innerHTML = `<span class="chip"></span><span class="name">${escapeHtml(s.name)}</span><span class="size">${humanSize(s.total_size)}</span>`;
+    row.onclick = () => cycleFilter(key, s.name, row);
+    list.appendChild(row);
+  }
+}
+
+function cycleFilter(key, name, row) {
+  const { include, exclude } = filterSections[key];
+  if (include.has(name)) {
+    include.delete(name);
+    exclude.add(name);
+    row.className = 'sender-row exclude';
+    row.querySelector('.chip').textContent = '−';
+  } else if (exclude.has(name)) {
+    exclude.delete(name);
+    row.className = 'sender-row';
+    row.querySelector('.chip').textContent = '';
+  } else {
+    include.add(name);
+    row.className = 'sender-row include';
+    row.querySelector('.chip').textContent = '✓';
+  }
+  resetGrid();
+}
+
+function wireFilterSearch(key) {
+  const cfg = filterSections[key];
+  document.getElementById(cfg.searchId).addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    for (const row of document.getElementById(cfg.listId).children) {
+      row.style.display = row.dataset.name.includes(q) ? '' : 'none';
+    }
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+function resetGrid() {
+  document.getElementById('grid').innerHTML = '';
+  state.selected.clear();
+  state.selectedSizeOverride = null;
+  state.lastClickedId = null;
+  updateSelStat();
+  state.nextOffset = 0;
+  state.done = false;
+  loadMore();
+}
+
+async function loadMore() {
+  if (state.loading || state.done) return;
+  state.loading = true;
+  const params = new URLSearchParams({
+    offset: state.nextOffset,
+    limit: 60,
+    include: [...state.include].join(','),
+    exclude: [...state.exclude].join(','),
+    include_chat: [...state.includeChat].join(','),
+    exclude_chat: [...state.excludeChat].join(','),
+  });
+  const res = await fetch('/api/items?' + params);
+  const data = await res.json();
+  state.filteredTotal = data.total_count;
+  document.getElementById('totalStat').textContent =
+    `${data.total_count.toLocaleString()} files · ${humanSize(data.total_size)}`;
+  updateSelectAllLabel();
+
+  const grid = document.getElementById('grid');
+  const sentinel = document.getElementById('sentinel');
+  if (sentinel) sentinel.remove();
+
+  if (data.items.length === 0 && state.nextOffset === 0) {
+    const empty = document.createElement('div');
+    empty.id = 'empty';
+    empty.textContent = 'No files match this filter.';
+    grid.appendChild(empty);
+  }
+
+  for (const item of data.items) {
+    grid.appendChild(renderCard(item));
+  }
+
+  if (data.next_offset != null) {
+    state.nextOffset = data.next_offset;
+    const s = document.createElement('div');
+    s.id = 'sentinel';
+    grid.appendChild(s);
+    observer.observe(s);
+  } else {
+    state.done = true;
+  }
+  state.loading = false;
+}
+
+function renderCard(item) {
+  state.itemsById.set(item.id, item);
+
+  const card = document.createElement('div');
+  const preSelected = state.selected.has(item.id);
+  card.className = preSelected ? 'card selected' : 'card';
+  card.dataset.id = item.id;
+
+  const frame = document.createElement('div');
+  frame.className = 'frame';
+  card.appendChild(frame);
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = preSelected;
+  cb.onclick = (e) => {
+    e.stopPropagation();
+    setCardSelected(item.id, cb.checked);
+    state.lastClickedId = item.id;
+    updateSelStat();
+  };
+  card.appendChild(cb);
+
+  if (item.has_thumb) {
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.draggable = false;
+    img.src = `/thumb/${item.id}`;
+    img.onerror = () => { img.replaceWith(placeholder(item.ext)); };
+    frame.appendChild(img);
+  } else {
+    frame.appendChild(placeholder(item.ext));
+  }
+
+  const dur = humanDuration(item.duration);
+  if (dur) {
+    const d = document.createElement('div');
+    d.className = 'duration';
+    d.textContent = dur;
+    frame.appendChild(d);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  const showChat = item.chat && item.chat !== item.sender;
+  overlay.innerHTML = `
+    <div class="sender">${escapeHtml(item.sender)}</div>
+    ${showChat ? `<div class="chat">${escapeHtml(item.chat)}</div>` : ''}
+    <div class="meta"><span>${humanSize(item.size)}</span><span>${humanDate(item.date)}</span></div>
+  `;
+  frame.appendChild(overlay);
+
+  // Finder-like selection: click = select only, shift = range, cmd/ctrl = toggle.
+  // Double-click opens the file.
+  card.addEventListener('click', (e) => {
+    if (e.shiftKey && state.lastClickedId != null) {
+      selectRange(state.lastClickedId, item.id);
+    } else if (e.metaKey || e.ctrlKey) {
+      setCardSelected(item.id, !state.selected.has(item.id));
+      state.lastClickedId = item.id;
+    } else {
+      clearSelection();
+      setCardSelected(item.id, true);
+      state.lastClickedId = item.id;
+    }
+    updateSelStat();
+  });
+  card.addEventListener('dblclick', () => {
+    fetch('/api/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.id }),
+    });
+  });
+
+  return card;
+}
+
+function placeholder(ext) {
+  const p = document.createElement('div');
+  p.className = 'placeholder';
+  p.textContent = ext || 'file';
+  return p;
+}
+
+function setCardSelected(id, selected) {
+  state.selectedSizeOverride = null; // manual change invalidates the "select all" exact total
+  const card = document.querySelector(`.card[data-id="${id}"]`);
+  if (selected) {
+    state.selected.add(id);
+    if (card) card.classList.add('selected');
+  } else {
+    state.selected.delete(id);
+    if (card) card.classList.remove('selected');
+  }
+  if (card) {
+    const cb = card.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = selected;
+  }
+}
+
+function clearSelection() {
+  for (const id of [...state.selected]) setCardSelected(id, false);
+}
+
+function selectRange(fromId, toId) {
+  const ids = [...document.querySelectorAll('.card')].map(c => Number(c.dataset.id));
+  const i1 = ids.indexOf(fromId), i2 = ids.indexOf(toId);
+  if (i1 === -1 || i2 === -1) {
+    clearSelection();
+    setCardSelected(toId, true);
+    return;
+  }
+  const [lo, hi] = i1 < i2 ? [i1, i2] : [i2, i1];
+  clearSelection();
+  for (let i = lo; i <= hi; i++) setCardSelected(ids[i], true);
+}
+
+function updateSelStat() {
+  const n = state.selected.size;
+  let total = state.selectedSizeOverride;
+  if (total == null) {
+    total = 0;
+    for (const id of state.selected) {
+      const it = state.itemsById.get(id);
+      if (it) total += it.size;
+    }
+  }
+  document.getElementById('selStat').textContent = n ? `${n} selected · ${humanSize(total)}` : '';
+  document.getElementById('deleteBtn').disabled = n === 0;
+  updateSelectAllLabel();
+}
+
+function updateSelectAllLabel() {
+  const btn = document.getElementById('selectAllBtn');
+  const allSelected = state.filteredTotal > 0 && state.selected.size >= state.filteredTotal;
+  btn.textContent = allSelected ? 'Deselect all' : `Select all ${state.filteredTotal.toLocaleString()}`;
+}
+
+document.getElementById('selectAllBtn').onclick = async () => {
+  const allSelected = state.filteredTotal > 0 && state.selected.size >= state.filteredTotal;
+  if (allSelected) {
+    clearSelection();
+    updateSelStat();
+    return;
+  }
+  const params = new URLSearchParams({
+    include: [...state.include].join(','),
+    exclude: [...state.exclude].join(','),
+    include_chat: [...state.includeChat].join(','),
+    exclude_chat: [...state.excludeChat].join(','),
+  });
+  const res = await fetch('/api/select_all?' + params);
+  const data = await res.json();
+  state.selected = new Set(data.ids);
+  state.selectedSizeOverride = data.total_size;
+  // Reflect selection on whatever cards are already rendered.
+  for (const card of document.querySelectorAll('.card')) {
+    const id = Number(card.dataset.id);
+    const sel = state.selected.has(id);
+    card.classList.toggle('selected', sel);
+    const cb = card.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = sel;
+  }
+  updateSelStat();
+};
+
+// ---- Finder-style rubber-band drag selection ----
+const marquee = document.createElement('div');
+marquee.id = 'marquee';
+document.body.appendChild(marquee);
+
+let dragStart = null;
+let dragMoved = false;
+let dragAdditive = false;
+let dragSnapshot = null;
+let lastMouse = { x: 0, y: 0 };
+let autoScrollRAF = null;
+
+const AUTOSCROLL_EDGE = 50;   // px from top/bottom edge that triggers scrolling
+const AUTOSCROLL_SPEED = 16;  // max px scrolled per animation frame
+
+document.getElementById('grid').addEventListener('mousedown', (e) => {
+  // Only the checkbox opts out of drag-select; dragging that starts on top of
+  // a thumbnail should still paint-select, like Finder icon view.
+  if (e.button !== 0 || e.target.closest('input[type=checkbox]')) return;
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragMoved = false;
+  dragAdditive = e.shiftKey || e.metaKey || e.ctrlKey;
+  dragSnapshot = new Set(state.selected);
+  if (!dragAdditive) clearSelection();
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  lastMouse = { x: e.clientX, y: e.clientY };
+  if (!dragStart) return;
+  if (!dragMoved) {
+    // Don't show the marquee (or touch selection) for a plain click with no
+    // real movement — let the card's own click handler own that case.
+    const moved = Math.abs(e.clientX - dragStart.x) > 3 || Math.abs(e.clientY - dragStart.y) > 3;
+    if (!moved) return;
+    dragMoved = true;
+    marquee.style.display = 'block';
+    if (!autoScrollRAF) autoScrollRAF = requestAnimationFrame(autoScrollTick);
+  }
+  updateMarquee(e.clientX, e.clientY);
+  applyMarqueeSelection();
+});
+
+document.addEventListener('mouseup', () => {
+  if (!dragStart) return;
+  dragStart = null;
+  dragMoved = false;
+  marquee.style.display = 'none';
+  updateSelStat();
+});
+
+// Autoscroll the grid while dragging near its top/bottom edge, like Finder.
+// The marquee anchor moves with the content so it stays pinned to the same
+// pixel as the grid scrolls underneath the still-held cursor.
+function autoScrollTick() {
+  if (!dragStart) { autoScrollRAF = null; return; }
+  autoScrollRAF = requestAnimationFrame(autoScrollTick);
+  if (!dragMoved) return;
+
+  const grid = document.getElementById('grid');
+  const rect = grid.getBoundingClientRect();
+  const y = lastMouse.y;
+  let dy = 0;
+  if (y < rect.top + AUTOSCROLL_EDGE) {
+    dy = -AUTOSCROLL_SPEED * Math.min(1, (rect.top + AUTOSCROLL_EDGE - y) / AUTOSCROLL_EDGE);
+  } else if (y > rect.bottom - AUTOSCROLL_EDGE) {
+    dy = AUTOSCROLL_SPEED * Math.min(1, (y - (rect.bottom - AUTOSCROLL_EDGE)) / AUTOSCROLL_EDGE);
+  }
+  if (dy === 0) return;
+
+  const before = grid.scrollTop;
+  grid.scrollTop += dy;
+  const actualDy = grid.scrollTop - before;
+  if (actualDy === 0) return;
+
+  dragStart.y -= actualDy;
+  updateMarquee(lastMouse.x, lastMouse.y);
+  applyMarqueeSelection();
+}
+
+function updateMarquee(x, y) {
+  const left = Math.min(x, dragStart.x), top = Math.min(y, dragStart.y);
+  const width = Math.abs(x - dragStart.x), height = Math.abs(y - dragStart.y);
+  marquee.style.left = left + 'px';
+  marquee.style.top = top + 'px';
+  marquee.style.width = width + 'px';
+  marquee.style.height = height + 'px';
+  marquee._rect = { left, top, right: left + width, bottom: top + height };
+}
+
+function rectsIntersect(a, b) {
+  return !(b.left > a.right || b.right < a.left || b.top > a.bottom || b.bottom < a.top);
+}
+
+function applyMarqueeSelection() {
+  const mRect = marquee._rect;
+  for (const card of document.querySelectorAll('.card')) {
+    const id = Number(card.dataset.id);
+    const intersects = rectsIntersect(mRect, card.getBoundingClientRect());
+    setCardSelected(id, intersects || (dragAdditive && dragSnapshot.has(id)));
+  }
+  updateSelStat();
+}
+
+document.getElementById('deleteBtn').onclick = async () => {
+  const n = state.selected.size;
+  let total = 0;
+  for (const id of state.selected) {
+    const it = state.itemsById.get(id);
+    if (it) total += it.size;
+  }
+  if (!confirm(`Permanently delete ${n} file${n === 1 ? '' : 's'} (${humanSize(total)})? This cannot be undone.`)) {
+    return;
+  }
+  const ids = [...state.selected];
+  const res = await fetch('/api/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  await res.json();
+  // Full refresh: re-pull the (now smaller) filtered list and both filter
+  // panels, rather than just plucking deleted cards out of the DOM.
+  state.itemsById.clear();
+  resetGrid();
+  loadFilterSection('sender');
+  loadFilterSection('chat');
+};
+
+const observer = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) loadMore();
+});
+
+loadFilterSection('sender');
+loadFilterSection('chat');
+wireFilterSearch('sender');
+wireFilterSearch('chat');
+loadMore();
+</script>
