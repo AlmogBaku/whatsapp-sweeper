@@ -23,7 +23,12 @@ jobs:
       # imports cleanly and the CLI entry point is wired up (it should exit
       # right away here with a friendly "macOS only" message).
       - run: uv run python -c "import whatsapp_sweeper"
-      - run: uv run whatsapp-sweeper; test $? -ne 0
+      - name: CLI should refuse to run on non-macOS
+        run: |
+          if uv run whatsapp-sweeper; then
+            echo "expected a non-zero exit on Linux, got success" >&2
+            exit 1
+          fi
 
   release:
     name: Release
