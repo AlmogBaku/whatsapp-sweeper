@@ -221,6 +221,12 @@ def item_json(i, r):
     }
 
 
+class Server(socketserver.ThreadingTCPServer):
+    # Must be a class attribute: TCPServer.__init__ binds the socket
+    # immediately, before there's any chance to set this on the instance.
+    allow_reuse_address = True
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -380,8 +386,7 @@ def main():
         sys.exit(f"Couldn't find WhatsApp's chat database at:\n  {DB_PATH}")
 
     scan_media()
-    with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), Handler) as httpd:
-        httpd.allow_reuse_address = True
+    with Server(("127.0.0.1", PORT), Handler) as httpd:
         url = f"http://localhost:{PORT}"
         print(f"Serving on {url}")
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
