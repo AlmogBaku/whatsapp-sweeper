@@ -1,6 +1,6 @@
 [project]
 name = "whatsapp-sweeper"
-version = "1.0.0"
+version = "1.0.1"
 description = "Find and delete WhatsApp Desktop's bloated media cache, fast."
 readme = "README.md"
 license = "MIT"
